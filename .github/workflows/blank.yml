@@ -10,7 +10,7 @@ jobs:
 
       - name: Start tmate session
         # v4 is the latest major, but check for updates!
-        uses: mxschmitt/action-tmate@v4
+        uses: mxschmitt/action-tmate@v3
         with:
           # Set to true if you want only SSH (no web terminal).
           ssh: true
