@@ -1,0 +1,51 @@
+name: Expose Root SSH via ngrok
+
+# you can trigger manually or on a schedule
+on:
+  workflow_dispatch:
+
+jobs:
+  tunnel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install ngrok
+        run: |
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
+            && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+            | sudo tee /etc/apt/sources.list.d/ngrok.list \
+            && sudo apt update \
+            && sudo apt install -y ngrok
+
+      - name: Enable root SSH key login
+        run: |
+          # Permit root login
+          sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          # Install your public key for root
+          sudo mkdir -p /root/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" | sudo tee /root/.ssh/authorized_keys
+          sudo chmod 600 /root/.ssh/authorized_keys
+          # Restart SSH daemon
+          sudo systemctl restart sshd
+
+      - name: Authenticate ngrok
+        # load your token from GH secrets
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: ngrok config add-authtoken "$NGROK_AUTH_TOKEN"
+
+      - name: Start ngrok tunnel
+        run: |
+          # Launch ngrok in the background
+          nohup ngrok tcp 22 --region=us > ngrok.log 2>&1 &
+          # give it a moment to spin up
+          sleep 5
+          # show you the public forwarding URL
+          curl --silent http://127.0.0.1:4040/api/tunnels | jq
+
+      - name: Output connection info
+        run: |
+          T=$(curl --silent http://127.0.0.1:4040/api/tunnels \
+                | jq -r '.tunnels[] | select(.proto=="tcp") | .public_url')
+          echo "Connect with: ssh root@${T#tcp://}"
